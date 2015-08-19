@@ -66,6 +66,15 @@ sub conds_to_where {
                 push( @keys, "$key in (".join(',',@$qs).")" );
                 push( @vals, @$val );
             }
+            if( $ref eq 'HASH' ) {
+                my $special = $val->{'special'};
+                if( $special eq 'null' ) {
+                    push( @keys, "$key is null" );
+                }
+                elsif( $special eq 'notnull' ) {
+                    push( @keys, "$key is not null" );
+                }
+            }
         }
         else {
             push( @keys, "$key=?" );
@@ -134,7 +143,16 @@ sub query {
     my $dbh = $self->{'dbh'};
     
     if( $where_text ) { $where_text = "where $where_text"; }
-    print "Select $coltext from $table $where_text -- " . join(',', @$vals ) . "\n";
+    
+    my $q;
+    if( $ops->{'query'} ) {
+      $q = $ops->{'query'};
+      $q =~ s/\$where/$where_text/;
+    }
+    else {
+      $q = "select $coltext from $table $where_text";
+    }
+    print STDERR "$q -- " . join(',', @$vals ) . "\n";
     
     my @colnames;
     for my $col ( @$cols ) {
@@ -147,14 +165,14 @@ sub query {
     }
     
     if( $ops->{'limit'} && $ops->{'limit'} == 1 ) {
-        my $row = $dbh->selectrow_arrayref( "select $coltext from $table $where_text limit 1", undef, @$vals );
+        my $row = $dbh->selectrow_arrayref( "$q limit 1", undef, @$vals );
         if( !$row ) { return 0; }
         my $res = db_array_result_to_hash( $row, \@colnames );
         #print Dumper( $res );
         return $res;
     }
     else { # we need to return an array ref of rows
-        my $rows = $dbh->selectall_arrayref( "select $coltext from $table $where_text", undef, @$vals );
+        my $rows = $dbh->selectall_arrayref( $q, undef, @$vals );
         if( !$rows ) { return 0; }
         my @res;
         for my $row ( @$rows ) {
