@@ -86,23 +86,67 @@ sub conds_to_where {
     return ( $keytext, \@vals );
 }
 
+#<db_delete table="t1">
+#        <join table="t2" on="t3_id" as="t3_table" />
+#        <where blah="blah2" t3_table.blah4="blah5" />
+#    </db_delete>
 sub delete_cascade {
     my $self = shift;
-    my $table = shift;
-    my %conds = ( @_ );
-    #my ( $self, $table, $col, $val ) = @_;
+    my %ops = ( @_ );
+    
+    my $table = $ops{'table'};
+    my %conds = ( %{ $ops{'where'} } );
+    
     my ( $where_text, $vals ) = $self->conds_to_where( \%conds );
     
     $self->get_structure();
-    my $log = [ "deleting from $table where $where_text -- " . join(",", @$vals ) ];
-    # delete from the table
-    my $dbh = $self->{'dbh'};
-    $dbh->do( "begin" );
     
-    my $q = "delete from $table where $where_text";
-    #my $numrows = $dbh->do( $q, undef, @$vals );
-    my $sth = $dbh->prepare( $q );
-    $sth->execute( @$vals);
+    my $log = [ "deleting from $table where $where_text -- " . join(",", @$vals ) ];
+    
+    my $dbh = $self->{'dbh'};
+    
+    my $sth;
+    if( $ops{'join'} ) {
+        my $joins = $ops{'join'};
+        my $joint = '';
+        for my $join ( @$joins ) {
+            my $jtable = $join->{'table'};
+            my $on = $join->{'on'};
+            my $as = $join->{'as'};
+            $joint .= "join $jtable $as on $table.$on=$as.id ";
+        }
+        my $q = "select $table.id as id from $table $joint where $where_text";
+        my $rows = $dbh->selectall_arrayref( $q, undef, @$vals );
+        my @ids;
+        if( $rows ) {
+            for my $row ( @$rows ) {
+                my $id = $row->[0];
+                push( @ids, $id );
+            }
+        }
+        if( !@ids ) {
+            push( @$log, "no matching items found" );
+            return $log;
+        }
+        
+        $dbh->do('begin');
+        
+        my ( $w2, $v2 ) = $self->conds_to_where( { id => \@ids } );
+        my $q2 = "delete from $table where $w2";
+        $sth =  $dbh->prepare( $q2 );
+        $sth->execute( @$v2 );
+    }
+    else {
+        # delete from the table
+        
+        $dbh->do( "begin" );
+        
+        my $q = "delete from $table where $where_text";
+        #my $numrows = $dbh->do( $q, undef, @$vals );
+        $sth = $dbh->prepare( $q );
+        $sth->execute( @$vals);
+    }
+    
     my $numrows = $sth->rows;
     
     if( $numrows ) { 
