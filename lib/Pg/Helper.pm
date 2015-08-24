@@ -194,7 +194,17 @@ sub query {
       $q =~ s/\$where/$where_text/;
     }
     else {
-      $q = "select $coltext from $table $where_text";
+      my $joint = '';
+      if( $ops->{'join'} ) {
+        my $joins = $ops->{'join'};
+        for my $join ( @$joins ) {
+            my $jtable = $join->{'table'};
+            my $on = $join->{'on'};
+            my $as = $join->{'as'};
+            $joint .= "join $jtable $as on $table.$on=$as.id ";
+        }
+      }
+      $q = "select $coltext from $table $joint $where_text";
     }
     print STDERR "$q -- " . join(',', @$vals ) . "\n";
     
